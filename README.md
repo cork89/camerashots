@@ -1,10 +1,10 @@
 # CameraShots
 
-Point your phone at your monitor, press the shutter, and get a real screenshot of the area in view instead of a photo of a screen.
+Point your phone at your monitor, take the picture, and get a screenshot of the area in view instead of a photo of a screen.
 
 While the phone page is open, a Windows tray app shows small markers on your monitors. The phone uses them to work out where it is pointing, and the PC takes the actual screenshot. The markers are hidden from screenshots. The shot appears on your phone and, by default, on the PC clipboard.
 
-The app runs a small web server on your PC. [Tailscale Serve](https://tailscale.com/kb/1312/serve) gives it an HTTPS address that only devices on your Tailscale network can reach. The phone needs Tailscale, but no CameraShots app.
+The app runs a small web server on your PC. I use [Tailscale Serve](https://tailscale.com/kb/1312/serve) to give it an HTTPS address that only devices on a Tailscale network can reach. The phone needs Tailscale as well.
 
 ## Requirements
 
@@ -15,8 +15,6 @@ The app runs a small web server on your PC. [Tailscale Serve](https://tailscale.
 
 ## Setup
 
-Run these in PowerShell from the project folder.
-
 1. Start Tailscale Serve:
 
    ```powershell
@@ -24,7 +22,7 @@ Run these in PowerShell from the project folder.
    tailscale serve status
    ```
 
-   If asked, follow the link to turn on HTTPS. Note the `https://...ts.net` address. The setting survives restarts. If you already use Serve, check its status first so you don't replace something.
+   If asked, follow the link to turn on HTTPS. Note the `https://...ts.net` address.
 
 2. Build the app and give it that address, without a path:
 
@@ -44,11 +42,9 @@ You can pair several phones by scanning the same code.
 - **iPhone:** open the page in Safari, tap **Share**, then **Add to Home Screen**.
 - **Android:** in Chrome, open the menu and choose **Add to Home screen** or **Install app**.
 
-The app still needs Tailscale and the PC to be running.
-
 ## Use
 
-Point the phone at a monitor. When the yellow border appears, press the shutter. The PC shows a notification for each capture.
+Point the phone at a monitor. When the yellow border appears, take the pic. The PC shows a notification for each capture.
 
 Click the tray icon for:
 
@@ -61,10 +57,6 @@ Click the tray icon for:
 
 - **The QR code is a password.** Anyone with it who can reach your PC over Tailscale can capture any part of your screen while the app is running. It does not expire. If it leaks, use **Reset pairing**.
 - Each phone shares the same token, so you cannot revoke just one.
-- The server listens on `127.0.0.1` only, and every API call needs the token.
-- Do not use Tailscale Funnel. It would put the app on the public internet.
-- Traffic between the phone and PC is encrypted.
-- Your `ts.net` hostname appears in public certificate logs.
 - Camera frames are processed on the phone and are not uploaded.
 - The token is stored unencrypted in `%LOCALAPPDATA%\CameraShots`, in both `token` and `pair.html`.
 - Capture notifications can be hidden by Do Not Disturb.
@@ -92,7 +84,7 @@ To test in a browser on the PC, quit the app and run `.\camerashots.exe --url ht
 
 To use another port, add `-define:PORT=12345` to the command in `build.bat` and give Tailscale Serve the same port.
 
-- `src/`: Windows app and web server (Odin)
+- `src/`: Windows app and web server
 - `web/`: phone page and pairing page
 
 `web/aruco.js`, `web/cv.js` and `web/qrcode.js` are third-party code. See their headers for licenses.
