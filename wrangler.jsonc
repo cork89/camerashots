@@ -1,8 +1,0 @@
-{
-  "name": "camerashots",
-  "main": "worker/index.js",
-  "compatibility_date": "2026-06-01",
-  "assets": { "directory": "web" },
-  "durable_objects": { "bindings": [{ "name": "ROOM", "class_name": "Room" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
-}

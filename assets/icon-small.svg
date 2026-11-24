@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" role="img" aria-label="CameraShots">
+  <rect width="16" height="16" rx="3" fill="#000"/>
+  <path d="M2 2h4v2H4v2H2zM10 2h4v4h-2V4h-2zM12 10h2v4h-4v-2h2zM2 10h2v2h2v2H2z" fill="#ffd21f" shape-rendering="crispEdges"/>
+  <path d="M6 6h4v4H6z" fill="#fff" shape-rendering="crispEdges"/>
+</svg>

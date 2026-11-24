@@ -9,7 +9,7 @@
   var token = '';
   try { token = localStorage.getItem('token') || ''; } catch (e) {}
   function readHash() {
-    var match = /t=([0-9a-f]+)/.exec(location.hash);
+    var match = /^#t=([0-9a-f]{48})$/.exec(location.hash);
     if (!match) return;
     token = match[1];
     try { localStorage.setItem('token', token); } catch (e) {}

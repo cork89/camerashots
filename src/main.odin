@@ -2,12 +2,11 @@ package camerashots
 
 import "base:runtime"
 import "core:crypto"
-import "core:crypto/hash"
+import "core:encoding/base64"
 import "core:fmt"
 import "core:os"
 import "core:strings"
 import "core:sync"
-import "core:thread"
 import win "core:sys/windows"
 
 HEARTBEAT_TIMEOUT_MS :: 6000
@@ -17,6 +16,8 @@ WM_SHOW_MARKERS :: win.WM_APP + 2
 WM_COPY_DIB :: win.WM_APP + 3
 WM_HIDE_MARKERS :: win.WM_APP + 4
 WM_CAPTURED :: win.WM_APP + 5
+
+ICON_ID :: 1 // matches assets/app.rc
 
 CMD_PAIR :: 1
 CMD_RESET :: 2
@@ -31,6 +32,7 @@ g_token: string // written on the UI thread; guarded by g_token_lock
 g_token_lock: sync.Mutex
 PAIR_ON_SETUP :: #config(PAIR_ON_SETUP, true)
 g_dir: string
+g_url: string // e.g. https://my-pc.my-tailnet.ts.net
 g_tray: win.NOTIFYICONDATAW
 
 fail :: proc(msg: string) -> ! {
@@ -38,9 +40,9 @@ fail :: proc(msg: string) -> ! {
 	os.exit(1)
 }
 
-// Saves or loads the Worker address. Returns false if it isn't a usable URL.
-load_relay :: proc(arg: string) -> bool {
-	path := fmt.tprintf("%s\\relay", g_dir)
+// Saves or loads the HTTPS address phones use. Returns false if it isn't a usable URL.
+load_url :: proc(arg: string) -> bool {
+	path := fmt.tprintf("%s\\url", g_dir)
 	url := arg
 	if url == "" {
 		data, err := os.read_entire_file(path, context.allocator)
@@ -48,11 +50,19 @@ load_relay :: proc(arg: string) -> bool {
 		url = string(data)
 	}
 	url = strings.trim_right(strings.trim_space(url), "/")
-	local := strings.has_prefix(url, "http://127.0.0.1:") // wrangler dev
+	local := strings.has_prefix(url, "http://127.0.0.1:") // testing in a browser on this PC
 	if !local && !strings.has_prefix(url, "https://") do return false
-	if strings.contains_any(url[strings.index(url, "://") + 3:], "/?# \"<") do return false
-	g_relay = strings.clone(url)
-	if arg != "" && os.write_entire_file(path, g_relay) != nil do fail("Could not save the Worker address.")
+	host := url[strings.index(url, "://") + 3:]
+	if host == "" do return false
+	for c in host {
+		switch c {
+		case 'a' ..= 'z', 'A' ..= 'Z', '0' ..= '9', '.', '-', ':':
+		case:
+			return false
+		}
+	}
+	g_url = strings.clone(url)
+	if arg != "" && os.write_entire_file(path, g_url) != nil do fail("Could not save the address.")
 	return true
 }
 
@@ -69,8 +79,6 @@ new_token :: proc() {
 	sync.lock(&g_token_lock)
 	g_token = strings.to_string(b)
 	sync.unlock(&g_token_lock)
-	sync.atomic_add(&g_token_generation, 1)
-	sync.sema_post(&g_ping_now) // the pong makes the relay thread notice and reconnect
 	if os.write_entire_file(token_path(), g_token) != nil do fail("Could not save the pairing token.")
 }
 
@@ -83,17 +91,14 @@ load_token :: proc() {
 	}
 }
 
-// The QR page is a local file, so the token is never served from the Worker.
+// The QR page is a local file, so the token is never served over the network.
 open_pairing_page :: proc() {
 	page := string(#load("../web/pair.html"))
 	page, _ = strings.replace_all(page, "/*QRCODE_JS*/", string(#load("../web/qrcode.js")), context.temp_allocator)
-	// The Worker only accepts the token with this hash.
-	digest := hash.hash_string(.SHA256, g_token, context.temp_allocator)
-	hex := strings.builder_make(context.temp_allocator)
-	for v in digest do fmt.sbprintf(&hex, "%02x", v)
-	page, _ = strings.replace_all(page, "__TOKEN_SHA256__", strings.to_string(hex), context.temp_allocator)
+	icon, _ := base64.encode(transmute([]byte)string(ICON), allocator = context.temp_allocator)
+	page, _ = strings.replace_all(page, "__ICON__", icon, context.temp_allocator)
 	page, _ = strings.replace_all(page, "__TOKEN__", g_token, context.temp_allocator)
-	page, _ = strings.replace_all(page, "__RELAY__", g_relay, context.temp_allocator)
+	page, _ = strings.replace_all(page, "__URL__", g_url, context.temp_allocator)
 	path := fmt.tprintf("%s\\pair.html", g_dir)
 	if os.write_entire_file(path, page) != nil {
 		win.MessageBoxW(g_main, win.L("Could not write the pairing page."), win.L("CameraShots"), win.MB_ICONERROR)
@@ -136,6 +141,14 @@ tray_menu :: proc() {
 	case CMD_QUIT:
 		win.DestroyWindow(g_main)
 	}
+}
+
+// Picks the size Windows wants for the tray, so it isn't scaled down from 32 px.
+load_tray_icon :: proc() -> win.HICON {
+	cx, cy := win.GetSystemMetrics(win.SM_CXSMICON), win.GetSystemMetrics(win.SM_CYSMICON)
+	icon := win.LoadImageW(g_instance, cstring16(win.MAKEINTRESOURCEW(ICON_ID)), win.IMAGE_ICON, cx, cy, win.LR_DEFAULTCOLOR)
+	if icon == nil do return win.LoadIconA(nil, win.IDI_APPLICATION) // built without the resource
+	return win.HICON(icon)
 }
 
 main_proc :: proc "system" (hwnd: win.HWND, msg: win.UINT, wp: win.WPARAM, lp: win.LPARAM) -> win.LRESULT {
@@ -190,8 +203,8 @@ main :: proc() {
 	if win.GetLastError() == win.ERROR_ALREADY_EXISTS do fail("CameraShots is already running. Use its tray icon.")
 
 	arg := ""
-	if len(os.args) == 3 && os.args[1] == "--relay" do arg = os.args[2]
-	if !load_relay(arg) do fail("Set your Worker address first:\n\ncamerashots.exe --relay https://camerashots.YOUR-NAME.workers.dev")
+	if len(os.args) == 3 && os.args[1] == "--url" do arg = os.args[2]
+	if !load_url(arg) do fail("Set your Tailscale address first:\n\ncamerashots.exe --url https://YOUR-PC.YOUR-TAILNET.ts.net")
 	load_token()
 
 	wc := win.WNDCLASSW{lpfnWndProc = main_proc, hInstance = g_instance, lpszClassName = win.L("CameraShotsMain")}
@@ -210,13 +223,12 @@ main :: proc() {
 		uID              = 1,
 		uFlags           = win.NIF_MESSAGE | win.NIF_ICON | win.NIF_TIP,
 		uCallbackMessage = WM_TRAY,
-		hIcon            = win.LoadIconA(nil, win.IDI_APPLICATION),
+		hIcon            = load_tray_icon(),
 	}
 	for r, i in "CameraShots" do g_tray.szTip[i] = u16(r)
 	win.Shell_NotifyIconW(win.NIM_ADD, &g_tray)
 
-	thread.create_and_start(relay_loop, self_cleanup = true)
-	thread.create_and_start(ping_loop, self_cleanup = true)
+	start_server()
 
 	if PAIR_ON_SETUP && arg != "" do open_pairing_page()
 
