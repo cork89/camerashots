@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Pair CameraShots</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 3rem auto; padding: 0 1rem; color: #111; background: #fff; }
+  input { font: inherit; width: 100%; box-sizing: border-box; padding: .6rem; border: 1px solid #777; border-radius: 6px; }
+  code { background: #eee; padding: .1rem .35rem; border-radius: 4px; }
+  #qr { margin: 1.5rem 0; }
+  #qr svg { width: 280px; height: 280px; }
+</style>
+<h1>Pair your phone</h1>
+<p>Scan this with your phone:</p>
+<div id="qr"></div>
+<p>It opens <b>__RELAY__</b>. Anyone with this code can capture your screen. Use <b>Reset pairing</b> in the tray menu to revoke it.</p>
+<p>The Worker only accepts this PC. After first setup and after every reset, run this in the project folder:</p>
+<p><code>npx wrangler secret put TOKEN_SHA256</code></p>
+<p>and paste this value (a hash, not the token itself):</p>
+<p><input readonly onfocus="this.select()" aria-label="Token hash" value="__TOKEN_SHA256__"></p>
+<script>/*QRCODE_JS*/</script>
+<script>
+  var qr = qrcode(0, 'M');
+  qr.addData('__RELAY__/#t=__TOKEN__');
+  qr.make();
+  document.getElementById('qr').innerHTML = qr.createSvgTag({ scalable: true, margin: 4 });
+</script>
+</html>
